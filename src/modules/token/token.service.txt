@@ -1,0 +1,164 @@
+import { randomUUID, randomBytes } from 'crypto';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { type Response } from 'express';
+import { RedisService } from '../../providers/redis/redis.service';
+
+import { DeviceMeta } from '../auth/utils/device-parser.util';
+import { bestEffort } from '@/src/common/utils/best-effort.util';
+import { PrismaService } from '@/prisma/prisma.service';
+
+export interface IssuedTokens {
+  accessToken: string;
+  refreshToken: string;
+  deviceId: string;
+  refreshTtlSeconds: number;
+}
+
+@Injectable()
+export class TokenService {
+  private readonly logger = new Logger(TokenService.name);
+
+  constructor(
+    private jwtService: JwtService,
+    private configService: ConfigService,
+    private prismaService: PrismaService,
+    private redisService: RedisService,
+  ) {}
+
+  // ─── Issue token pair ────────────────────────────────────────────────────────
+  async issueTokens(userId: string, meta: DeviceMeta): Promise<IssuedTokens> {
+    const jti = randomUUID();
+    const refreshToken = randomBytes(40).toString('hex');
+
+    const accessExpiry = this.configService.getOrThrow<string>('JWT_ACCESS_EXPIRES_IN');
+    const refreshExpiry = this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN');
+    const accessTtlSeconds = this.parseDurationToSeconds(accessExpiry);
+    const refreshTtlSeconds = this.parseDurationToSeconds(refreshExpiry);
+
+    const accessToken = this.jwtService.sign({ sub: userId, jti }, { expiresIn: accessTtlSeconds });
+    const expiresAt = new Date(Date.now() + refreshTtlSeconds * 1000);
+
+    await this.prismaService.refreshToken.create({
+      data: {
+        userId,
+        token: refreshToken,
+        expiresAt,
+        deviceId: meta.deviceId,
+        deviceName: meta.deviceName,
+        userAgent: meta.userAgent,
+      },
+    });
+
+    try {
+      await this.redisService.setRefreshToken(userId, meta.deviceId, refreshToken, refreshTtlSeconds);
+    } catch (e) {
+      await bestEffort(this.logger, 'Failed to rollback refresh token after Redis failure', () =>
+        this.prismaService.refreshToken.delete({ where: { token: refreshToken } }),
+      );
+      throw e;
+    }
+
+    return { accessToken, refreshToken, deviceId: meta.deviceId, refreshTtlSeconds };
+  }
+
+  async rotateRefreshToken(incomingToken: string, meta: DeviceMeta): Promise<IssuedTokens> {
+    const record = await this.prismaService.refreshToken.findUnique({
+      where: { token: incomingToken },
+    });
+
+    if (!record) throw new UnauthorizedException('Invalid refresh token');
+
+    if (record.revokedAt) {
+      this.logger.warn(`Token reuse detected for user ${record.userId}`);
+      await this.revokeAllForUser(record.userId);
+      throw new UnauthorizedException('Token reuse detected. All sessions revoked.');
+    }
+
+    if (record.expiresAt < new Date()) throw new UnauthorizedException('Refresh token expired');
+
+    const updated = await this.prismaService.$executeRaw`
+    UPDATE "RefreshToken"
+    SET "revokedAt" = NOW()
+    WHERE token = ${incomingToken}
+      AND "revokedAt" IS NULL
+  `;
+
+    if (updated === 0) {
+      this.logger.warn(`Concurrent token reuse for user ${record.userId}`);
+      await this.revokeAllForUser(record.userId);
+      throw new UnauthorizedException('Token reuse detected. All sessions revoked.');
+    }
+
+    await this.redisService.deleteRefreshToken(record.userId, record.deviceId);
+    return this.issueTokens(record.userId, meta);
+  }
+
+  // ─── Revoke single token ─────────────────────────────────────────────────────
+  async revokeToken(refreshToken: string): Promise<void> {
+    const result = await this.prismaService.$queryRaw<{ userId: string; deviceId: string }[]>`
+      UPDATE "RefreshToken"
+      SET "revokedAt" = NOW()
+      WHERE token = ${refreshToken}
+        AND "revokedAt" IS NULL
+      RETURNING "userId", "deviceId"
+    `;
+
+    if (result.length === 0) return;
+
+    const { userId, deviceId } = result[0];
+    await this.redisService.deleteRefreshToken(userId, deviceId);
+  }
+
+  async revokeAllForUser(userId: string): Promise<void> {
+    await this.prismaService.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    try {
+      await this.redisService.deleteAllRefreshTokens(userId);
+    } catch (e) {
+      this.logger.error(`Failed to delete Redis refresh tokens for user ${userId}`, e);
+    }
+  }
+
+  // ─── Blacklist access token (on logout) ─────────────────────────────────────
+  async blacklistAccessToken(jti: string, exp: number): Promise<void> {
+    const remainingTtl = exp - Math.floor(Date.now() / 1000);
+    if (remainingTtl > 0) {
+      await this.redisService.blacklistToken(jti, remainingTtl);
+    }
+  }
+
+  async getActiveDevices(userId: string) {
+    return this.prismaService.refreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { id: true, deviceId: true, deviceName: true, ipAddress: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // Helpers
+  private parseDurationToSeconds(duration: string): number {
+    const match = duration.match(/^(\d+)([smhdw])$/);
+    if (!match) {
+      this.logger.warn(`Invalid duration format: "${duration}", falling back to 30d`);
+      return 2592000;
+    } // 30d default
+    const value = parseInt(match[1], 10);
+    const map: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 };
+    return value * map[match[2]];
+  }
+
+  public setRefreshCookie(res: Response, token: string, ttlSeconds: number) {
+    return res.cookie('refresh_token', token, {
+      httpOnly: true,
+      secure: IS_PROD,
+      sameSite: 'strict' as const,
+      maxAge: ttlSeconds * 1000,
+      path: '/',
+    });
+  }
+}
