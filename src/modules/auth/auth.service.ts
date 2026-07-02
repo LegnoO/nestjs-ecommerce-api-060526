@@ -25,6 +25,21 @@ export class AuthService {
     private readonly emitter: TypedEventEmitter,
   ) {}
 
+  async getMe(userId: string) {
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        avatarUrl: true,
+        emailVerifiedAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
   // ─── Register ──────────────────────────────────────────────────────────
   async register(dto: RegisterDto) {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);

@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { type Request, type Response } from 'express';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
@@ -7,10 +7,18 @@ import { CurrentDevice } from './decorators/device-meta.decorator';
 import { type DeviceMeta } from '../sessions/types/device-meta.type';
 import { type RequestWithUser } from './types/auth-request.type';
 import { setRefreshCookies } from '@/src/common/utils/cookie.util';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(@CurrentUser('id') userId: string) {
+    return this.authService.getMe(userId);
+  }
 
   @Post('register')
   register(@Body() dto: RegisterDto) {

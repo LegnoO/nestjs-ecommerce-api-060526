@@ -8,6 +8,7 @@ import { RedisModule } from './providers/redis/redis.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from './modules/auth/auth.module';
 import { PrismaModule } from '@/prisma/prisma.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PrismaModule } from '@/prisma/prisma.module';
     RedisModule,
     AuthModule,
     PrismaModule,
+    AdminModule,
   ],
   controllers: [],
   providers: [

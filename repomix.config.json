@@ -1,0 +1,13 @@
+{
+  "output": {
+    "style": "xml",
+    "compress": true,
+    "removeComments": false,
+    "removeEmptyLines": true,
+    "filePath": "repomix-output.xml"
+  },
+  "include": [],
+  "ignore": {
+    "customPatterns": ["**/*.service-old.txt", "**/README.md", "**/*.hbs", "pnpm-lock.yaml", "**/generated/**"]
+  }
+}
