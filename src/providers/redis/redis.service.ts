@@ -157,4 +157,24 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async hasResendCooldown(userId: string, type: ResendCooldownType): Promise<boolean> {
     return this.exists(this.resendCooldownKey(userId, type));
   }
+
+  async isSessionRevoked(sessionId: string): Promise<boolean> {
+    return this.exists(`auth:session-revoked:${sessionId}`);
+  }
+
+  async markSessionRevoked(sessionId: string, ttlSeconds: number): Promise<void> {
+    await this.set(`auth:session-revoked:${sessionId}`, '1', ttlSeconds);
+  }
+
+  private sessionTokenKey(sessionId: string): string {
+    return `auth:session-token:${sessionId}`;
+  }
+
+  async setSessionTokenHash(sessionId: string, hash: string, ttlSeconds: number): Promise<void> {
+    await this.set(this.sessionTokenKey(sessionId), hash, ttlSeconds);
+  }
+
+  async deleteSessionTokenHash(sessionId: string): Promise<void> {
+    await this.del(this.sessionTokenKey(sessionId));
+  }
 }

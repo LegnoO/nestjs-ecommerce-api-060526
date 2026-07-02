@@ -12,3 +12,67 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL    // email + password
+  GOOGLE
+}
+
+enum RevokeReason {
+  USER_LOGOUT
+  USER_REVOKED_DEVICE
+  TOKEN_REUSE
+  PASSWORD_CHANGED
+  ADMIN_REVOKED
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String
+  password        String?   // nullable — Google-only users have no password
+  googleId        String?   @unique
+  avatarUrl       String?
+  role            UserRole  @default(CUSTOMER)
+  emailVerifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+
+  @@index([email])
+}
+
+model Session {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Device identity — stable for the lifetime of the device.
+  // Generated once client-side, sent via x-device-id header.
+  deviceId   String
+  deviceName String?
+  userAgent  String?
+  ipAddress  String?
+
+  // Token — rotated on every refresh, stored as SHA-256 hash.
+  // Raw token lives only in the httpOnly cookie on the client.
+  refreshTokenHash String @unique
+
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  revokedReason RevokeReason?
+
+  // One row per device per user.
+  // Login from the same device reuses + overwrites the existing row.
+  @@unique([userId, deviceId])
+  @@index([userId])
+}

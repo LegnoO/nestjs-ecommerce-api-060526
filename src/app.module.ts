@@ -5,6 +5,9 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { RedisModule } from './providers/redis/redis.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AuthModule } from './modules/auth/auth.module';
+import { PrismaModule } from '@/prisma/prisma.module';
 
 @Module({
   imports: [
@@ -13,8 +16,10 @@ import { RedisModule } from './providers/redis/redis.module';
       validationSchema: envValidationSchema,
     }),
     ThrottlerModule.forRoot([{ name: 'global', ttl: 60000, limit: 100 }]),
-
+    EventEmitterModule.forRoot(),
     RedisModule,
+    AuthModule,
+    PrismaModule,
   ],
   controllers: [],
   providers: [
@@ -26,6 +31,6 @@ import { RedisModule } from './providers/redis/redis.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).exclude().forRoutes('*');
+    consumer.apply(LoggerMiddleware).forRoutes('*');
   }
 }

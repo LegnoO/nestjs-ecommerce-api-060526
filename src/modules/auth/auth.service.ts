@@ -1,0 +1,84 @@
+import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import { PrismaService } from '@/prisma/prisma.service';
+import { SessionsService } from '../sessions/sessions.service';
+import { DeviceMeta } from '../sessions/types/device-meta.type';
+import { RegisterDto } from './dto/register.dto';
+import { isPrismaUniqueConstraint } from '@/src/utils/prisma-error.util';
+import { UserRegisteredEvent } from './events/user-registered.event';
+import { TypedEventEmitter } from '@/src/common/events/typed-event-emitter';
+
+export interface AuthResult {
+  accessToken: string;
+  user: { id: string; email: string; name: string };
+}
+
+const BCRYPT_ROUNDS = 12;
+
+@Injectable()
+export class AuthService {
+  readonly logger = new Logger(AuthService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessions: SessionsService,
+    private readonly emitter: TypedEventEmitter,
+  ) {}
+
+  // ─── Register ──────────────────────────────────────────────────────────
+  async register(dto: RegisterDto) {
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+
+    try {
+      const user = await this.prisma.user.create({
+        data: { email: dto.email, name: dto.name, password: passwordHash },
+        select: { id: true, email: true, name: true },
+      });
+
+      this.emitter.emit('user.registered', new UserRegisteredEvent(user.id, user.email, user.name));
+
+      return user;
+    } catch (e) {
+      if (isPrismaUniqueConstraint(e)) throw new ConflictException('Email already in use');
+
+      throw e;
+    }
+  }
+
+  // ─── Used by LocalStrategy ────────────────────────────────────────────
+  async validateCredentials(email: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.password) throw new UnauthorizedException('Invalid credentials');
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) throw new UnauthorizedException('Invalid credentials');
+
+    return user;
+  }
+
+  // ─── Login ─────────────────────────────────────────────────────────────
+  // Called by AuthController after LocalAuthGuard has already validated
+  // credentials and attached `user` to the request.
+  async login(userId: string, meta: DeviceMeta) {
+    const { accessToken, refreshToken, sessionId, refreshTtlSeconds } = await this.sessions.createSession(userId, meta);
+
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { id: true, email: true, name: true },
+    });
+
+    return { accessToken, refreshToken, sessionId, refreshTtlSeconds, user };
+  }
+
+  // ─── Refresh ───────────────────────────────────────────────────────────
+  async refresh(sessionId: string, presentedRefreshToken: string, meta: DeviceMeta) {
+    return this.sessions.rotateSession(sessionId, presentedRefreshToken, meta);
+  }
+
+  // ─── Logout ────────────────────────────────────────────────────────────
+  // Only revokes the CURRENT session — "log out other devices" is a
+  // separate explicit action via SessionsController, never bundled here.
+  async logout(userId: string, sessionId: string) {
+    await this.sessions.revokeSession(userId, sessionId, 'USER_LOGOUT');
+  }
+}
