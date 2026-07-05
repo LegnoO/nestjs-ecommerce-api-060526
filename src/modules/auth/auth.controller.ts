@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { type Request, type Response } from 'express';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
@@ -9,6 +9,8 @@ import { type RequestWithUser } from './types/auth-request.type';
 import { setRefreshCookies } from '@/src/common/utils/cookie.util';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -37,5 +39,15 @@ export class AuthController {
     setRefreshCookies(res, result.refreshToken, result.sessionId, result.refreshTtlSeconds);
 
     return { accessToken: result.accessToken, user: result.user };
+  }
+
+  @Get('verify-email')
+  verifyEmail(@Query() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto.token);
+  }
+
+  @Post('resend-verification')
+  resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.authService.resendVerificationEmail(dto.email);
   }
 }
