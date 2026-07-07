@@ -11,10 +11,15 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { isDev } from '@/src/common/constants/env.constants';
+import { PrismaService } from '@/prisma/prisma.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
@@ -34,11 +39,17 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @CurrentDevice() device: DeviceMeta,
   ) {
-    const userId = req.user.id;
-    const result = await this.authService.login(userId, device);
-    setRefreshCookies(res, result.refreshToken, result.sessionId, result.refreshTtlSeconds);
+    const { accessToken, refreshToken, sessionId, refreshTtlSeconds } = await this.authService.login(
+      req.user.id,
+      device,
+    );
 
-    return { accessToken: result.accessToken, user: result.user };
+    setRefreshCookies(res, refreshToken, sessionId, refreshTtlSeconds);
+
+    return {
+      accessToken,
+      debug: isDev() ? await this.prisma.user.findUniqueOrThrow({ where: { id: req.user.id } }) : undefined,
+    };
   }
 
   @Get('verify-email')
@@ -46,8 +57,8 @@ export class AuthController {
     return this.authService.verifyEmail(dto.token);
   }
 
-  @Post('resend-verification')
-  resendVerification(@Body() dto: ResendVerificationDto) {
-    return this.authService.resendVerificationEmail(dto.email);
+  @Post('send-verification')
+  sendVerification(@Body() dto: ResendVerificationDto) {
+    return this.authService.sendVerificationEmail(dto.email);
   }
 }

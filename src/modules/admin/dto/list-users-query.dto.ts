@@ -11,8 +11,9 @@ export class ListUsersQueryDto extends PaginationQueryDto {
   search?: string;
 
   @IsOptional()
-  @Transform(upperCaseTransformer)
   @IsEnum(UserRole)
+  @Transform(upperCaseTransformer)
+  @Transform(emptyToUndefinedTransformer)
   role?: UserRole;
 
   @IsOptional()

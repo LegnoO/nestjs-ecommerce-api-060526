@@ -57,7 +57,7 @@ export class AuthService {
 
       this.emitter.emit('user.registered', new UserRegisteredEvent(user.id, user.email, user.name));
 
-      return user;
+      return { message: 'Registered successfully', user };
     } catch (e) {
       if (isPrismaUniqueConstraint(e)) throw new ConflictException('Email already in use');
 
@@ -82,12 +82,7 @@ export class AuthService {
   async login(userId: string, meta: DeviceMeta) {
     const { accessToken, refreshToken, sessionId, refreshTtlSeconds } = await this.sessions.createSession(userId, meta);
 
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { id: true, email: true, name: true },
-    });
-
-    return { accessToken, refreshToken, sessionId, refreshTtlSeconds, user };
+    return { accessToken, refreshToken, sessionId, refreshTtlSeconds };
   }
 
   async refresh(sessionId: string, presentedRefreshToken: string, meta: DeviceMeta) {
@@ -113,11 +108,11 @@ export class AuthService {
     return { message: 'Email verified successfully' };
   }
 
-  async resendVerificationEmail(email: string) {
+  async sendVerificationEmail(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (!user || user.emailVerifiedAt)
-      return { message: 'If the account exists and is unverified, a new email has been sent' };
+      return { message: 'If the account exists and is unverified, a verification email has been sent' };
 
     const onCooldown = await this.redisService.hasResendCooldown(user.id, 'verify');
     if (onCooldown) throw new ConflictException('Please wait before requesting another verification email');
@@ -130,6 +125,6 @@ export class AuthService {
       this.mailService.sendVerificationEmail(user.email, user.name, token),
     );
 
-    return { message: 'If the account exists and is unverified, a new email has been sent' };
+    return { message: 'If the account exists and is unverified, a verification email has been sent' };
   }
 }

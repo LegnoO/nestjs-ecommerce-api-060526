@@ -4,7 +4,7 @@ import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ConfigService } from '@nestjs/config';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
-import { IS_PROD } from './common/constants/env.constants';
+import { isProd } from './common/constants/env.constants';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 
@@ -33,7 +33,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: true },
-      disableErrorMessages: IS_PROD,
+      disableErrorMessages: isProd(),
     }),
   );
 

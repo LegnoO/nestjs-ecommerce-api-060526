@@ -13,7 +13,7 @@ export class TokenService {
 
   constructor(private readonly jwtService: JwtService) {}
 
-  signAccessToken(payload: AccessTokenPayload): string {
+  signAccessToken(payload: AccessTokenPayload) {
     return this.jwtService.sign(payload);
   }
 
@@ -21,11 +21,11 @@ export class TokenService {
     return this.jwtService.verify<AccessTokenPayload>(token);
   }
 
-  generateRefreshToken(): string {
+  generateRefreshToken() {
     return randomBytes(40).toString('hex');
   }
 
-  hashToken(token: string): string {
+  hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
   }
 }

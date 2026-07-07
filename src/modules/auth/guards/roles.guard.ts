@@ -30,6 +30,7 @@ export class RolesGuard implements CanActivate {
     });
 
     if (!dbUser || !requiredRoles.includes(dbUser.role)) throw new ForbiddenException('Insufficient permissions');
+    user.role = dbUser.role;
 
     return true;
   }

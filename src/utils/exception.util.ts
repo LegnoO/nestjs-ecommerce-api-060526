@@ -1,7 +1,7 @@
-import { IS_PROD } from '../common/constants/env.constants';
+import { isProd } from '../common/constants/env.constants';
 
 export function buildDebugInfo(exception: unknown): Record<string, unknown> | undefined {
-  if (IS_PROD) return undefined;
+  if (isProd()) return undefined;
   if (!(exception instanceof Error)) return undefined;
 
   return {

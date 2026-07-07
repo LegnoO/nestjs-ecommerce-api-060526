@@ -7,6 +7,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { UserRole } from '@/generated/prisma/enums';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { UpdateUserRoleDto } from '../dto/update-user-role.dto';
+import { CurrentActorRole } from '../../auth/decorators/current-actor-role.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
@@ -15,8 +16,12 @@ export class AdminUsersController {
   constructor(private readonly adminUserService: AdminUsersService) {}
 
   @Get()
-  list(@Query() query: ListUsersQueryDto) {
-    return this.adminUserService.listUsers(query);
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  list(@CurrentUser('id') userId: string, @CurrentActorRole() role: UserRole, @Query() query: ListUsersQueryDto) {
+    console.log({ userId, role, query });
+    const actingUser = { id: userId, role: role };
+
+    return this.adminUserService.listUsers(actingUser, query);
   }
 
   @Get(':id')
