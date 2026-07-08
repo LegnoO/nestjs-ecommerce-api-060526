@@ -20,11 +20,6 @@ export class SessionsService {
   ) {}
 
   // ─── Create (login) ─────────────────────────────────────────────────
-  // Upsert by (userId, deviceId): if this device already had a session
-  // (e.g. user logged out without clearing local storage deviceId, or
-  // browser still has the old deviceId), we REUSE the row rather than
-  // creating a duplicate. This keeps "Your devices" list clean — one
-  // entry per physical device, not one per login event.
   async createSession(userId: string, meta: DeviceMeta) {
     const refreshToken = this.tokenService.generateRefreshToken();
     const refreshTokenHash = this.tokenService.hashToken(refreshToken);
@@ -55,9 +50,9 @@ export class SessionsService {
 
     const accessToken = this.tokenService.signAccessToken({ sub: userId, sessionId: session.id });
 
-    // Cache the hash in Redis for fast rotate-time lookup, avoiding a DB
-    // round trip on every refresh. DB row remains the source of truth;
-    // this is purely a read-through cache.
+    // Cache the hash in Redis for fast rotate-time lookups,
+    // avoiding a DB query on every token refresh.
+    // The DB remains the source of truth; Redis is used solely as a cache.
     await this.redis.setSessionTokenHash(session.id, refreshTokenHash, REFRESH_TTL_SECONDS);
 
     return {
@@ -79,17 +74,11 @@ export class SessionsService {
 
     const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
 
-    if (!session) {
-      throw new UnauthorizedException('Session not found');
-    }
+    if (!session) throw new UnauthorizedException('Session not found');
 
-    if (session.revokedAt) {
-      throw new UnauthorizedException('Session has been revoked');
-    }
+    if (session.revokedAt) throw new UnauthorizedException('Session has been revoked');
 
-    if (session.expiresAt < new Date()) {
-      throw new UnauthorizedException('Session expired');
-    }
+    if (session.expiresAt < new Date()) throw new UnauthorizedException('Session expired');
 
     if (session.refreshTokenHash !== presentedHash) {
       // Token mismatch on a non-revoked, non-expired session = reuse of

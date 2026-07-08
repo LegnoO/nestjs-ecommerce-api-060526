@@ -1,5 +1,5 @@
 import { AUTH_TTL } from '@/src/common/constants/auth.constant';
-import { IS_DEV } from '@/src/common/constants/env.constants';
+import { isDev } from '@/src/common/constants/env.constants';
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
@@ -17,7 +17,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.redis = new Redis(this.configService.getOrThrow<string>('REDIS_URL'), {
       retryStrategy: (times) => {
-        if (IS_DEV && times > 3) {
+        if (isDev() && times > 3) {
           this.logger.error('Redis connection failed after 3 attempts');
           return null;
         }

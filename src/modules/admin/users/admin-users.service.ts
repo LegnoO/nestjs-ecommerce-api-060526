@@ -1,11 +1,12 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SessionsService } from '../../sessions/sessions.service';
-import { RevokeReason } from '@/generated/prisma/enums';
+import { RevokeReason, UserRole } from '@/generated/prisma/enums';
 import { Prisma } from '@/generated/prisma/client';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { UpdateUserRoleDto } from '../dto/update-user-role.dto';
 import { paginate } from '@/src/common/utils/paginate.util';
+import { resolveRoleFilter } from '@/src/common/utils/role-scope.util';
 
 @Injectable()
 export class AdminUsersService {
@@ -14,11 +15,12 @@ export class AdminUsersService {
     private readonly sessions: SessionsService,
   ) {}
 
-  async listUsers(query: ListUsersQueryDto) {
+  async listUsers(actingUser: { id: string; role: UserRole }, query: ListUsersQueryDto) {
     const { page, limit, search, role, sortBy, sortOrder } = query;
+    const roleFilter = resolveRoleFilter(actingUser.role, role);
 
     const where: Prisma.UserWhereInput = {
-      ...(role && { role }),
+      ...(roleFilter && { role: roleFilter }),
       ...(search && {
         OR: [{ email: { contains: search, mode: 'insensitive' } }, { name: { contains: search, mode: 'insensitive' } }],
       }),
@@ -75,15 +77,16 @@ export class AdminUsersService {
 
     await this.sessions.revokeAllSessions(targetUserId, RevokeReason.ADMIN_REVOKED);
 
-    return user;
+    return { message: 'User role updated successfully', user };
   }
 
   async deleteUser(actingAdminId: string, targetUserId: string) {
     if (actingAdminId === targetUserId) throw new ForbiddenException('Cannot delete your own account');
 
-    return this.prisma.user.delete({
+    const user = await this.prisma.user.delete({
       where: { id: targetUserId },
       select: { id: true, email: true },
     });
+    return { message: 'User deleted successfully', user };
   }
 }

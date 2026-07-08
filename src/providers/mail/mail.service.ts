@@ -34,7 +34,7 @@ export class MailService {
     this.logger.log(`Password reset email sent to ${to}`);
   }
 
-  async sendWelcomeEmail(to: string, name: string): Promise<void> {
+  async sendWelcomeEmail(to: string, name: string) {
     await this.mailerService.sendMail({
       to,
       subject: 'Welcome to E-Commerce!',

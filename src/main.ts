@@ -3,10 +3,10 @@ import { AppModule } from './app.module';
 import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ConfigService } from '@nestjs/config';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { isProd } from './common/constants/env.constants';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
-import { IS_PROD } from './common/constants/env.constants';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -33,7 +33,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: true },
-      disableErrorMessages: IS_PROD,
+      disableErrorMessages: isProd(),
     }),
   );
 
